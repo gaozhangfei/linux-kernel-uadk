@@ -151,6 +151,7 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	init_waitqueue_head(&q->wait);
 	filep->private_data = q;
 	uacce->inode = inode;
+	q->pid = get_task_pid(current, PIDTYPE_PID);
 	q->state = UACCE_Q_INIT;
 
 	mutex_lock(&uacce->queues_lock);
@@ -175,6 +176,7 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 	mutex_unlock(&q->uacce->queues_lock);
 	uacce_put_queue(q);
 	uacce_unbind_queue(q);
+	put_pid(q->pid);
 	kfree(q);
 
 	return 0;
@@ -385,8 +387,31 @@ static void uacce_release(struct device *dev)
 	kfree(uacce);
 }
 
-static unsigned int uacce_enable_sva(struct device *parent, unsigned int flags)
+static int uacce_sva_handler(struct iommu_fault *fault, void *data)
 {
+	struct uacce_queue *q, *next_q;
+	struct uacce_device *uacce = data;
+	int pasid = 0;
+
+	if (fault)
+		pasid = fault->prm.pasid;
+
+	mutex_lock(&uacce->queues_lock);
+	list_for_each_entry_safe(q, next_q, &uacce->queues, list) {
+		if (q->pasid == pasid)
+			break;
+	}
+	mutex_unlock(&uacce->queues_lock);
+
+	if (q)
+		kill_pid(q->pid, SIGKILL, 1);
+
+	return 0;
+}
+
+static unsigned int uacce_enable_sva(struct uacce_device *uacce, unsigned int flags)
+{
+	struct device *parent = uacce->parent;
 	int ret;
 
 	if (!(flags & UACCE_DEV_SVA))
@@ -394,20 +419,31 @@ static unsigned int uacce_enable_sva(struct device *parent, unsigned int flags)
 
 	flags &= ~UACCE_DEV_SVA;
 
+	ret = iommu_register_device_fault_handler(parent, uacce_sva_handler, uacce);
+	if (ret) {
+		dev_err(parent, "failed to register device fault ret = %pe\n", ERR_PTR(ret));
+		return flags;
+	}
+
 	ret = iommu_dev_enable_feature(parent, IOMMU_DEV_FEAT_IOPF);
 	if (ret) {
 		dev_err(parent, "failed to enable IOPF feature! ret = %pe\n", ERR_PTR(ret));
-		return flags;
+		goto unregister;
 	}
 
 	ret = iommu_dev_enable_feature(parent, IOMMU_DEV_FEAT_SVA);
 	if (ret) {
 		dev_err(parent, "failed to enable SVA feature! ret = %pe\n", ERR_PTR(ret));
-		iommu_dev_disable_feature(parent, IOMMU_DEV_FEAT_IOPF);
-		return flags;
+		goto disable;
 	}
 
 	return flags | UACCE_DEV_SVA;
+
+disable:
+	iommu_dev_disable_feature(parent, IOMMU_DEV_FEAT_IOPF);
+unregister:
+	iommu_unregister_device_fault_handler(parent);
+	return flags;
 }
 
 static void uacce_disable_sva(struct uacce_device *uacce)
@@ -417,6 +453,7 @@ static void uacce_disable_sva(struct uacce_device *uacce)
 
 	iommu_dev_disable_feature(uacce->parent, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(uacce->parent, IOMMU_DEV_FEAT_IOPF);
+	iommu_unregister_device_fault_handler(uacce->parent);
 }
 
 /**
@@ -430,7 +467,6 @@ static void uacce_disable_sva(struct uacce_device *uacce)
 struct uacce_device *uacce_alloc(struct device *parent,
 				 struct uacce_interface *interface)
 {
-	unsigned int flags = interface->flags;
 	struct uacce_device *uacce;
 	int ret;
 
@@ -438,10 +474,8 @@ struct uacce_device *uacce_alloc(struct device *parent,
 	if (!uacce)
 		return ERR_PTR(-ENOMEM);
 
-	flags = uacce_enable_sva(parent, flags);
-
 	uacce->parent = parent;
-	uacce->flags = flags;
+	uacce->flags = uacce_enable_sva(uacce, interface->flags);
 	uacce->ops = interface->ops;
 
 	ret = xa_alloc(&uacce_xa, &uacce->dev_id, uacce, xa_limit_32b,
