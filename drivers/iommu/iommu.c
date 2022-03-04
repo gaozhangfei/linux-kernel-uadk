@@ -3167,3 +3167,58 @@ bool iommu_group_dma_owner_claimed(struct iommu_group *group)
 	return user;
 }
 EXPORT_SYMBOL_GPL(iommu_group_dma_owner_claimed);
+
+/**
+ * iommu_group_setup_sw_msi - Get the SW MSI window for group and set it
+ * 			      to the domain this group is attached.
+ * @group: The group to setup SW MSI window
+ *
+ * This sets the DMA cookie to the domain the group is attached. Return 0
+ * on sucess, otherwise error is returned.
+ *
+ * A driver using this API must do it after attaching group to a domain.
+ */
+int iommu_group_setup_sw_msi(struct iommu_group *group)
+{
+	LIST_HEAD(group_resv_regions);
+	struct iommu_resv_region *region;
+	struct iommu_resv_region *tmp;
+	bool has_sw_msi = false;
+	phys_addr_t resv_msi_base;
+	int ret;
+
+	ret = iommu_get_group_resv_regions(group, &group_resv_regions);
+	if (ret)
+		return ret;
+
+	list_for_each_entry(region, &group_resv_regions, list) {
+		/*
+		 * The presence of any 'real' MSI regions should take
+		 * precedence over the software-managed one if the
+		 * IOMMU driver happens to advertise both types.
+		 */
+		if (region->type == IOMMU_RESV_MSI) {
+			has_sw_msi = false;
+			break;
+		}
+
+		if (region->type == IOMMU_RESV_SW_MSI) {
+			resv_msi_base = region->start;
+			has_sw_msi = true;
+		}
+	}
+
+	if (has_sw_msi) {
+		mutex_lock(&group->mutex);
+		ret = iommu_get_msi_cookie(group->domain, resv_msi_base);
+		mutex_unlock(&group->mutex);
+		if (ret == -ENODEV)
+			ret = 0;
+	}
+
+	list_for_each_entry_safe (region, tmp, &group_resv_regions, list)
+		kfree(region);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(iommu_group_setup_sw_msi);
