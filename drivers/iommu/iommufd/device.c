@@ -6,6 +6,7 @@
 #include <linux/iommu.h>
 #include <linux/file.h>
 #include <linux/pci.h>
+#include <linux/irqdomain.h>
 
 #include "iommufd_private.h"
 
@@ -126,6 +127,20 @@ static bool iommufd_hw_pagetable_has_group(struct iommufd_hw_pagetable *hwpt,
 	return false;
 }
 
+static int iommufd_device_setup_sw_msi(struct iommufd_device *idev)
+{
+	bool msi_remap;
+
+	msi_remap = irq_domain_check_msi_remap() ||
+		    iommu_capable(idev->dev->bus, IOMMU_CAP_INTR_REMAP);
+
+	/* VFIO equivalent allow_unsafe_interrupts opt-in to be discussed */
+	if (!msi_remap)
+		return -EPERM;
+
+	return iommu_group_setup_sw_msi(idev->group);
+}
+
 /**
  * iommufd_device_attach - Connect a device to an iommu_domain
  * @idev: device to attach
@@ -160,6 +175,10 @@ int iommufd_device_attach(struct iommufd_device *idev, u32 *pt_id)
 		if (rc)
 			goto out_unlock;
 
+		rc = iommufd_device_setup_sw_msi(idev);
+		if (rc)
+			goto out_detach;
+
 		/*
 		 * hwpt is now the exclusive owner of the group so this is the
 		 * first time enforce is called for this group.
@@ -178,8 +197,6 @@ int iommufd_device_attach(struct iommufd_device *idev, u32 *pt_id)
 	}
 	list_add(&idev->devices_item, &hwpt->devices);
 	mutex_unlock(&hwpt->devices_lock);
-
-	/* FIXME: For PCI devices need to check the MSI like VFIO does */
 
 	*pt_id = idev->hwpt->obj.id;
 	return 0;
