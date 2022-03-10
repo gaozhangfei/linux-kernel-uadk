@@ -127,8 +127,20 @@ static bool iommufd_hw_pagetable_has_group(struct iommufd_hw_pagetable *hwpt,
 	return false;
 }
 
-static int iommufd_device_setup_sw_msi(struct iommufd_device *idev)
+/**
+ * iommufd_device_setup_sw_msi - Get the SW MSI window for iommufd_device and
+ * 				 set the DMA cookie to its attached domain.
+ * @idev: A ponter to struct iommufd_device
+ *
+ * This sets the DMA cookie to the domain the device is attached. Return 0
+ * on sucess, otherwise error is returned.
+ *
+ * A driver using this API must do it after calling iommufd_device_attach()
+ * successfully.
+ */
+int iommufd_device_setup_sw_msi(struct iommufd_device *idev)
 {
+	int rc;
 	bool msi_remap;
 
 	msi_remap = irq_domain_check_msi_remap() ||
@@ -138,8 +150,13 @@ static int iommufd_device_setup_sw_msi(struct iommufd_device *idev)
 	if (!msi_remap)
 		return -EPERM;
 
-	return iommu_group_setup_sw_msi(idev->group);
+	rc = iommu_group_setup_sw_msi(idev->group);
+	if (rc)
+		return rc;
+
+	return 0;
 }
+EXPORT_SYMBOL_GPL(iommufd_device_setup_sw_msi);
 
 /**
  * iommufd_device_attach - Connect a device to an iommu_domain
@@ -174,10 +191,6 @@ int iommufd_device_attach(struct iommufd_device *idev, u32 *pt_id)
 		rc = iommu_attach_group(hwpt->domain, idev->group);
 		if (rc)
 			goto out_unlock;
-
-		rc = iommufd_device_setup_sw_msi(idev);
-		if (rc)
-			goto out_detach;
 
 		/*
 		 * hwpt is now the exclusive owner of the group so this is the

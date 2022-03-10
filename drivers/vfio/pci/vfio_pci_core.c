@@ -711,10 +711,18 @@ int vfio_pci_core_attach_ioas(struct vfio_device *core_vdev,
 	if (ret)
 		goto out_unlock;
 
+	ret = iommufd_device_setup_sw_msi(vdev->idev);
+	if (ret)
+		goto out_detach;
+
 	vdev->iommufd = attach->iommufd;
 	vdev->ioas_id = attach->ioas_id;
 	attach->out_hwpt_id = pt_id;
 
+	mutex_unlock(&vdev->idev_lock);
+	return 0;
+out_detach:
+	iommufd_device_detach(vdev->idev);
 out_unlock:
 	mutex_unlock(&vdev->idev_lock);
 

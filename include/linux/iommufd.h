@@ -25,6 +25,8 @@ void iommufd_unbind_device(struct iommufd_device *idev);
 int iommufd_device_attach(struct iommufd_device *idev, u32 *pt_id);
 void iommufd_device_detach(struct iommufd_device *idev);
 
+int iommufd_device_setup_sw_msi(struct iommufd_device *idev);
+
 struct iommufd_ctx *vfio_group_set_iommufd(int fd, struct list_head *device_list);
 void vfio_group_unset_iommufd(void *iommufd, struct list_head *device_list);
 int iommufd_vfio_check_extension(unsigned long type);
@@ -47,6 +49,11 @@ static inline int iommufd_device_attach(struct iommufd_device *idev,
 
 static inline void iommufd_device_detach(struct iommufd_device *idev)
 {
+}
+
+static inline int iommufd_device_setup_sw_msi(struct iommufd_device *idev)
+{
+	return -EOPNOTSUPP;
 }
 
 static inline struct iommufd_ctx *

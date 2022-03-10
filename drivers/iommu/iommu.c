@@ -3212,7 +3212,7 @@ int iommu_group_setup_sw_msi(struct iommu_group *group)
 		mutex_lock(&group->mutex);
 		ret = iommu_get_msi_cookie(group->domain, resv_msi_base);
 		mutex_unlock(&group->mutex);
-		if (ret == -ENODEV)
+		if (ret == -ENODEV || ret == -EEXIST)
 			ret = 0;
 	}
 
