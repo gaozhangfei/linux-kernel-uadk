@@ -154,6 +154,7 @@ static int iommufd_fops_open(struct inode *inode, struct file *filp)
 	ictx = kzalloc(sizeof(*ictx), GFP_KERNEL);
 	if (!ictx)
 		return -ENOMEM;
+	printk("gzf %s ictx=%x\n", __func__, ictx);
 
 	xa_init_flags(&ictx->objects, XA_FLAGS_ALLOC1);
 	ictx->filp = filp;
@@ -227,6 +228,7 @@ static struct iommufd_ioctl_op iommufd_ioctl_ops[] = {
 		 length),
 	IOCTL_OP(IOMMU_VFIO_IOAS, iommufd_vfio_ioas, struct iommu_vfio_ioas,
 		 reserved),
+//	IOCTL_OP(IOMMU_VFIO_SET_PASID_TABLE, iommufd_vfio_ioas, struct iommu_vfio_ioas, 	 reserved),
 #ifdef CONFIG_IOMMUFD_TEST
 	IOCTL_OP(IOMMU_TEST_CMD, iommufd_test, struct iommu_test_cmd, last),
 #endif
@@ -241,6 +243,8 @@ static long iommufd_fops_ioctl(struct file *filp, unsigned int cmd,
 	union ucmd_buffer buf;
 	unsigned int nr;
 	int ret;
+
+	printk("gzf %s ictx=%x\n", __func__, ictx);
 
 	nr = _IOC_NR(cmd);
 	if (nr < IOMMUFD_CMD_BASE ||
