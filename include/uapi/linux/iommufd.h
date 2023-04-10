@@ -6,6 +6,7 @@
 
 #include <linux/types.h>
 #include <linux/ioctl.h>
+#include <uapi/linux/iommu.h>
 
 #define IOMMUFD_TYPE (';')
 
@@ -50,6 +51,7 @@ enum {
 	IOMMUFD_CMD_HWPT_INVALIDATE,
 	IOMMUFD_CMD_DEVICE_SET_RID,
 	IOMMUFD_CMD_DEVICE_UNSET_RID,
+	IOMMUFD_CMD_PAGE_RESPONSE,
 };
 
 /**
@@ -733,4 +735,23 @@ struct iommufd_device_unset_rid {
 	__u32 dev_id;
 };
 #define IOMMU_DEVICE_UNSET_RID _IO(IOMMUFD_TYPE, IOMMUFD_CMD_DEVICE_UNSET_RID)
+
+/**
+ * struct iommu_hwpt_page_response - ioctl(IOMMUFD_CMD_PAGE_RESPONSE)
+ * @size: sizeof(struct iommu_hwpt_page_response)
+ * @flags: must be 0
+ * @hwpt_id: hwpt ID of target hardware page table for the response
+ * @dev_id: device ID of target device for the response
+ * @resp: response info
+ *
+ */
+struct iommu_hwpt_page_response {
+	__u32 size;
+	__u32 flags;
+	__u32 hwpt_id;
+	__u32 dev_id;
+	struct iommu_page_response resp;
+};
+
+#define IOMMU_PAGE_RESPONSE _IO(IOMMUFD_TYPE, IOMMUFD_CMD_PAGE_RESPONSE)
 #endif
