@@ -91,7 +91,7 @@ struct iommu_sva *iommu_sva_bind_device(struct device *dev, struct mm_struct *mm
 	/* Search for an existing domain. */
 	list_for_each_entry(domain, &mm->iommu_mm->sva_domains, next) {
 		ret = iommu_attach_device_pasid(domain, dev, iommu_mm->pasid);
-		if (!ret) {
+		if (!ret || ret == -EBUSY) {
 			domain->users++;
 			goto out;
 		}
@@ -141,8 +141,8 @@ void iommu_sva_unbind_device(struct iommu_sva *handle)
 	struct device *dev = handle->dev;
 
 	mutex_lock(&iommu_sva_lock);
-	iommu_detach_device_pasid(domain, dev, iommu_mm->pasid);
 	if (--domain->users == 0) {
+		iommu_detach_device_pasid(domain, dev, iommu_mm->pasid);
 		list_del(&domain->next);
 		iommu_domain_free(domain);
 	}
