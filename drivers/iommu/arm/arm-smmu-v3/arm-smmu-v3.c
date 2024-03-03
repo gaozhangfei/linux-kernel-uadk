@@ -3312,7 +3312,8 @@ arm_smmu_domain_alloc_nesting(struct device *dev, u32 flags,
 	if (ret)
 		return ERR_PTR(ret);
 
-	if (flags || !(master->smmu->features & ARM_SMMU_FEAT_TRANS_S1))
+	if ((flags & ~IOMMU_HWPT_FAULT_ID_VALID) ||
+	    !(master->smmu->features & ARM_SMMU_FEAT_TRANS_S1))
 		return ERR_PTR(-EOPNOTSUPP);
 
 	if (!(parent->type & __IOMMU_DOMAIN_PAGING))
@@ -3337,6 +3338,16 @@ arm_smmu_domain_alloc_nesting(struct device *dev, u32 flags,
 	if (!nested_domain)
 		return ERR_PTR(-ENOMEM);
 
+	if (flags & IOMMU_HWPT_FAULT_ID_VALID) {
+		/* Hack!. Remove dev from any existing iopf_queue */
+		iopf_queue_remove_device(master->smmu->evtq.iopf, dev);
+
+		ret = iopf_queue_add_device(master->smmu->evtq.iopf, dev);
+		if (ret) {
+			kfree(nested_domain);
+			return ERR_PTR(ret);
+		}
+	}
 	ret = xa_alloc(&smmu_parent->smmu->streams_user, &arg.sid,
 		       &master->streams[0], XA_LIMIT(arg.sid, arg.sid),
 		       GFP_KERNEL_ACCOUNT);
